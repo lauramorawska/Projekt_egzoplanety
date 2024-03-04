@@ -1,0 +1,790 @@
+---
+title: "Projekt egzoplanety"
+author: "Laura Morawska"
+date: "2023-11-27"
+output: 
+  html_document:
+    toc: true
+---
+
+<!-- TOC -->
+
+# Wprowadzenie
+Mój projekt dotyczy egzoplanet. W związku z tym, na samym początku chciałabym przedstawić,
+czym w ogóle jest mój zbiór danych. Zatem egzoplaneta, inaczej planeta pozasłoneczna, to planeta znajdująca się w układzie planetarnym, krążąca wokół gwiazdy innej niż Słońce. Zbiór danych `exoplanety` zawiera wszystkie informacje o wszystkich znanych egzoplanetach odkrytych przez różne misje kosmiczne NASA, obserwatoria naziemne i inne źródła (baza aktualizowana jest co miesiąc).
+Z reguły inne układy planetarne znacznie różnią się od Układu Słonecznego. W mojej pracy poruszać bedę wiele kwestii dotyczących podobieństwa, jak i różnic egzoplanet w stosunku do Ziemi.
+
+Oryginalny zbiór danych zawiera 5250 obserwacji oraz 13 zmiennych i został skompletowany na podstawie badań NASA.
+
+**Pakiety, z których będę korzystać:**
+```{r message=FALSE, warning=FALSE}
+library(ggplot2) 
+library(dplyr) 
+library(tidyverse)
+library(mice)
+library(corrplot)
+```
+
+Wczytuję mój zestaw danych.
+```{r}
+exoplanety <- read.csv("C:/Users/Laura Morawska/Desktop/studia/Analiza danych/Projekt/exoplanety.csv")
+```
+
+
+
+Zapoznajmy się teraz pokrótce ze strukturą pliku. 
+```{r}
+str(exoplanety)
+```
+
+Jak widać mamy 13 zmiennych. Dla ułatwienia obliczeń zamienimy niektóre typy zmiennych na `as.factor()`.
+```{r}
+exoplanety$planet_type <- as.factor(exoplanety$planet_type)
+exoplanety$mass_wrt <- as.factor(exoplanety$mass_wrt)
+exoplanety$radius_wrt <- as.factor(exoplanety$radius_wrt)
+exoplanety$detection_method <- as.factor(exoplanety$detection_method)
+str(exoplanety)
+```
+
+Teraz chciałabym omówić, co w ogóle oznaczają te zmienne. 
+
+# Zmienne
+
+- `name` - nazwa planety nadana przez NASA
+- `distance` - odleglość planety od Ziemi w latach świetlnych
+- `stellar_magnitude` - jasność planety (im jaśniejsza planeta, tym niższy numer)
+- `planet_type` - typ planety (te typy pochodzą od planet naszego Układu Słonecznego)
+- `discovery_year` - rok, w którym planeta została odkryta
+- `mass_multiplier` - mnożnik masy
+- `mass_wrt` - nazwa planety bazowej do obliczenia masy
+- `radius_multiplier` - mnożnik promienia
+- `radius_wrt` - nazwa planety bazowej do obliczenia promienia
+- `orbital_radius` - promień orbity planet krążących wokół swojego słońca(w jednostce AU)
+- `orbital_period` - czas w latach ziemskich potrzebny planecie na wykonanie 1 okrążenia wokół swojej gwiazdy
+- `eccentricity` - miara tego, jak bardzo orbita planety różni się od kołowej. Zmienna ta przyjmuje wartości od 0 do 1. Im większa wartość, tym orbita planety jest bardziej rozciągnięta. 0 oznacza, że orbita jest idealnym kołem. 
+- `detection_method` - metoda zastosowana przez NASA do znalezienia danej egzoplanety
+
+Jednostka astronomiczna (AU) to średnia odległość między środkiem Ziemi a środkiem Słońca.
+
+
+
+Sprawdźmy teraz, jakie podstawowe statystyki opisowe charakteryzują nasz zestaw danych.
+```{r}
+summary(exoplanety)
+```
+Na pierwszy rzut oka widzimy, że nasz wszechświat charakteryzuje się anomaliami. Mamy do czynienia zarówno z planetami karłowatymi, jak i gazowymi gigantami. Niektóre z nich znajdują kilkadziesiąt tysięcy lat świetlnych od naszej planety, a niektóre zaledwie kilka lat świetlnych.
+Spostrzeżenia te są ciekawym punktem wyjścia dla niektórych statystyk, które przedstawie w dalszej części projektu.
+
+Jak widać, mamy też trochę braków danych. Postaram się usunąć wszystkie wiersze, w których występuje jakaś wartość NA. Postępuję tak dlatego, ponieważ chcę, by mój zestaw danych opierał się tylko na w pełni zbadanych planetach. Dane w naszym zestawie pochodzą od NASA, więc skoro nawet ta agencja nie zna niektórych parametrów planet, to nie powinniśmy na nich opierać naszych statystyk.
+
+```{r}
+exo_cleaned <- na.omit(exoplanety)
+```
+
+Zapoznajmy się teraz z rozkładami zmiennych. 
+
+# Rozkłady zmiennych
+
+Na początek wyświetlę strukturę danych pliku.
+```{r}
+str(exo_cleaned)
+```
+
+## Odległość od Ziemi
+
+Na początek zajmiemy się zmienną `distance`.
+Narysuję wykres funkcji gęstości tej zmiennej.
+```{r fig.height=3, fig.width=6, warning=FALSE}
+exo_cleaned %>%
+  ggplot() +
+  geom_density(aes(x = distance), color = "blue", size = 1.25) +
+  labs(title = "Odległość planet od Ziemi w latach świetlnych",
+       x = "odległość",
+       y = "gęstość")
+```
+
+Jak widać, zdecydowana większość planet znajduje się w odległości mniejszej niż 10000 lat świetlnych od Ziemi. Obserwacje, które znajdują się dalej to wyjątki.
+
+
+## Jasność planet
+
+Wartości tej zmiennej przeważnie wahają się od -30 do 30. 
+Jasność **od -15 do -30** przyjmują obiekty takie jak np. Słońce w południe widoczne z Ziemi.
+W okolicach **od -5 do 5** znajdują się obiekty, które jeszcze są widoczne z powierzchni Ziemi gołym okiem.
+**Powyżej** jasności o wartości **10** gołym okiem zobaczymy najjaśniejsze kwazary, a resztę obiektów np. za pomocą lornetki.
+**Powyżej** jasności **20** obiekty zobaczymy za pomocą lunety.
+**Powyżej** jasności **30** obiekty zobaczymy już tylko za pomocą teleskopu Hubble'a.
+
+
+Do zbadania rozkładu jasności planet również posłużę się wykresem funkcji gęstości.
+```{r fig.height=3, fig.width=5}
+exo_cleaned %>%
+  ggplot() +
+  geom_density(aes(x = stellar_magnitude), color = "blue", size = 1.25) +
+  labs(title = "Jasność planet",
+       x = "jasność",
+       y = "gęstość")
+```
+
+Jak widać na wykresie, najwięcej spośród badanych planet ma jasność w okolicach 15.
+
+## Typ planety
+
+```{r fig.height=3, fig.width=5}
+exo_cleaned %>%
+  ggplot(aes (x = planet_type)) +
+  geom_bar(fill = "lightblue",
+           colour = "darkblue") +
+  labs(title = "Liczba obserwacji dla każdego typu planety",
+       x = "typ planety",
+       y = "liczba obserwacji")
+```
+
+Omówię teraz pokrótce każdy z wyżej wymienionych typów planet.
+
+- `Gas Giant` - Gazowy olbrzym. Planeta tego typu nie posiada stałej powierzchni, a skały nie stanowią znacznej części jej masy. Może być zbudowana głównie z gazu lub lodu. Jej cechą charakterystyczną jest bardzo duży rozmiar i stosunkowo mała gęstość.
+- `Neptune-like` - planety te są podobne pod względem wielkości do Neptuna czy Urana (Neptun jest około 4 razy większy od Ziemi). Planety te mogą mieć mieszane wnętrza, chociaż wszystkie są skaliste i zawierają metale ciężkie w swoich jądrach.
+- `Super Earth` - Superziemia. Jest to planeta o masie większej od masy Ziemi i należąca do typu planet skalistych. Promień superziemi może być do 3 razy większy od masy Ziemi, jednak największe z nich są najprawdopodobniej planetami oceanicznymi.
+- `Terrestrial` - Planeta skalista o rozmiarach podobnych do Ziemi. Ze względu na ich niewielką masę i rozmiary, w porównaniu do gwiazd czy gazowych olbrzymów, są one trudniejsze do wykrycia.
+
+
+Jak widać tych ostatnich właśnie jest najmniej.
+Najwięcej odkryto planet podobnych do Neptuna, aż ponad 1500. 
+
+
+## Rok odkrycia planety
+```{r fig.height=3, fig.width=5, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  ggplot() +
+  geom_histogram(aes(x = discovery_year), fill = "lightblue", color = "darkblue") +
+  labs(title = "Liczba planet odkrytych w danych latach",
+       x = "rok odkrycia",
+       y = "liczba planet")
+```
+
+Jak widać, przed rokiem 2000 odkryto relatywnie mało planet. Zdecydowana większość została odkryta po roku 2010. Najwięcej planet zostało odkrytych natomiast w 2016 roku.
+
+
+## Masa planety
+
+
+```{r fig.height=3, fig.width=5}
+exo_cleaned %>%
+  rename(planeta_bazowa = mass_wrt) %>%
+  ggplot(aes(x = mass_multiplier,
+             fill = planeta_bazowa)) +
+  geom_density(alpha = 0.5) + 
+  labs(title = "Masa względem planety bazowej",
+       x = "mnożnik masy",
+       y = "gęstość")
+```
+
+Ponieważ w zmiennej `mass_wrt` występują znaczące outliery, dużo nie odczytamy z tego wykresu. Wybiorę z naszego zestawu obserwacje o wartościach mniejszych od 95-kwantyla, by móc lepiej zobrazować rozkład tej zmiennej na wykresie.
+
+```{r fig.height=3, fig.width=5}
+exo_bez_outlierow_masy <- exo_cleaned[exo_cleaned$mass_multiplier <
+                                   quantile(exo_cleaned$mass_multiplier, 0.95),]
+
+exo_bez_outlierow_masy %>%
+  rename(planeta_bazowa = mass_wrt) %>%
+  ggplot(aes(x = mass_multiplier,
+             fill = planeta_bazowa)) +
+  geom_density(alpha = 0.5) + 
+  labs(title = "Masa względem planety bazowej",
+       x = "mnożnik masy",
+       y = "gęstość")
+```
+
+Teraz o wiele wyraźniej widzimy rozkład tej zmiennej. W obu przypadkach (gdy podstawą dla mnożnika masy jest Ziemia, jak i Jowisz) najwięcej obserwacji ma relatywnie małe wartości (asymetria prawostronna). Z wykresu funkcji gęstości również możemy odczytać, że istnieje bardzo dużo outlierów (dość spora liczba planet ma niespotykanie dużą masę).
+
+
+## Promień planety 
+
+W przypadku promienia również mamy sporo wartości odstających, dlatego zastosuję tę samą metodę co wyżej. Wybiorę z naszego zestawu obserwacje o wartościach mniejszych od 95-kwantyla, by móc lepiej zobrazować rozkład tej zmiennej na wykresie.
+
+```{r fig.height=3, fig.width=5}
+exo_bez_outlierow_promien <- exo_cleaned[exo_cleaned$radius_multiplier <
+                                           quantile(exo_cleaned$radius_multiplier, 0.95),]
+exo_bez_outlierow_promien %>%
+  rename(planeta_bazowa = radius_wrt) %>%
+  ggplot(aes(x = radius_multiplier, fill = planeta_bazowa)) +
+  geom_density(alpha = 0.5) + 
+  labs(title = "Promień względem planety bazowej",
+       x = "mnożnik promienia",
+       y = "gęstość")
+```
+
+Z wykresu możemy odczytać, że przy podziale na planety bazowe, bardzo dużo mamy planet mniejszych od Jowisza oraz planet większych od Ziemi.
+
+## Promień orbity
+
+W przypadku promienia orbity, również wybierzemy dane bez wartości odstających.
+```{r fig.height=3, fig.width=5}
+exo_bez_outlierow_promienia_orbity <- exo_cleaned[exo_cleaned$orbital_radius <
+                                             quantile(exo_cleaned$orbital_radius, 0.95),]
+exo_bez_outlierow_promienia_orbity %>%
+  ggplot() +
+  geom_boxplot(aes(x = orbital_radius), color = "blue") +
+  labs(title = "Wykres pudełkowy dla promienia orbity planety ",
+       x = "promień orbity",
+       )
+```
+
+Jak widać na wykresie, pierwszy kwartyl, mediana oraz trzeci kwartyl przyjmują wartości mniejsze od 1. Oznacza to, że ponad 3/4 wszystkich planet ma promień orbity mniejszy od ziemskiego. 
+(Promień orbity jest wyrażony w jednostkach astronomicznych, czyli AU. Jedna jednostka astronomiczna jest to właśnie odległość Ziemi od Słońca (czyli promień orbity)).
+
+
+## Czas obiegu wokół gwiazdy (okres orbitalny)
+
+Dla tej zmiennej również wybierzemy obserwacje bez uwzględnienia tych z wartościami odstającymi.
+```{r fig.height=3, fig.width=5}
+exo_bez_outlierow_czasu_obiegu <- exo_cleaned[exo_cleaned$orbital_period <
+                                                    quantile(exo_cleaned$orbital_period, 0.9),]
+exo_bez_outlierow_czasu_obiegu %>%
+  ggplot() +
+  geom_boxplot(aes(x = orbital_period), color = "blue") +
+  labs(title = "Czasu obiegu wokół gwiazdy",
+       x = "okres orbitalny",
+       )
+```
+
+Jak zatem wynika z wykresu pudełkowego z wąsem, zdecydowana większość egzoplanet ma bardzo krótki czas orbitalny w porównaniu do Ziemi. 
+Okres orbitalny jest wyrażony w latach ziemskich.
+
+
+## Ecentryczność orbity
+
+```{r fig.height=3, fig.width=5}
+exo_cleaned %>%
+  ggplot() +
+  geom_boxplot(aes(x = eccentricity), color = "blue") +
+  labs(title = "Wykres pudełkowy ecentryczności orbity planet",
+       x = "ecentryczność",
+       )
+
+```
+
+Jak można odczytać z powyższego wykresu, mediana ecentryczności jest praktycznie równa 0. Oznacza to, że większość planet ma orbitę zbliżoną do kołowej. Jednak na podstawie wartości odstających widzimy, że istnieją również planety, które mają bardzo spłaszczoną orbitę.
+
+
+## Metoda odkrycia planety
+
+Łącznie mamy 11 metod odkrywania planet. Omówię pokrótce każdą z nich.
+
+- *Transit Timing Variations* - polega na obserwowaniu zmian w czasie tranzytu 
+
+- *Transit* - tranzyt - polega na obserwacji przejścia jednego ciała niebieskiego przez tarczę drugiego ciała niebieskiego, gdy oba ciała i obserwator znajdują się w jednej linii
+
+- *Radial Velocity* - prędkość radialna - polega na obserwacji gwiazd pod kątem oznak ruchu. Można to wydedukować za pomocą spektometru do pomiaru sposobu w jaki linie widmowe gwiazdy są przesunięte w wyniku efektu Dopplera, tj. jak światło gwiazdy jest przesunięte w kierunku czerwonego lub niebieskiego końca widma.
+
+- *Pulsar Timing* - obserwacja pulsarów - pulsar jest gwiazdą neutronową, która obraca się z dużą prędkością, emitując fale radiowe w równych odstępach. Kiedy pulsar jest związany z egzoplanetą, ruch egzoplanety wokół pulsara wpływa na czas przyjścia impulsów na Ziemi.
+
+- *Pulsation Timing Variations* - metoda ta polega na analizie zmian w jasności pulsara, które mogą wynikać z obecnoścu egzoplanet lub innych ciał krążących wokół pulsara.
+
+- *Orbital Brightness Modulation* - gdy egzoplaneta przechodzi przed tarczą gwiazdy (tzw. tranzyt), zakrywa część światła gwiazdy z perspektywy obserwatora na Ziemi. To zakrycie powoduje tymczasowy spadek jasności gwiazdy, co jest rejestrowane przez teleskop lub inny instrument obserwacyjny.
+
+- *Gravitational Microlensing* - grawitacyjne mikroogniwo - występuje ono, gdy pole gwawitacyjne masywnego obiektu zakrzywia światło pochodzące od bardziej odległego obiektu w tle, jak inna gwiazda czy galaktyka
+
+- *Eclipse Timing Variations* - metoda ta opiera się na analizie zmian w czasie występowania zaćmień gwiazdy w układzie podwójnym. Podwójne układy gwiazdowe - układy, w których dwie gwiazdy krążą wokół wspólnego środka masy.
+
+- *Disk Kinematics* - ta metoda polega na badaniu przerw tworzonych przez egzoplanety w dyskach protoplanetarnych (strukturach obecnych wokół młodych gwiazd, w których materia obracająca się wokół gwiazdy formuje się w płaskie dyski złożone głównie z gazu, kurzu i innych drobnych cząstek)
+
+- *Direct Imaging* - jest to jedna z najbardziej bezpośrednich metod, w której staramy się zarejestrować obrazy egzoplanet, oddzielając je od blasku ich centralnej gwiazdy
+
+- *Astronometry* - metoda ta polega na pomiarze pozycji gwiazd lub innych obiektów astronomicznych na niebie oraz monitorowanie ich ruchu
+
+
+
+
+```{r fig.height=4, fig.width=6}
+exo_cleaned %>%
+  ggplot(aes(y = detection_method )) +
+  geom_bar(fill = "darkgreen",
+           colour = "darkgreen") +
+  labs(title = "Liczba planet odkrytych daną metodą",
+       y = "metoda odkrycia",
+       x = "liczba obserwacji")
+```
+
+Przez to, że zdecydowanie najczęstszą metodą odkrywania planet jest metoda tranzytowa i metoda prędkości radialnej to mało dowiadujemy się o innych metodach.
+Narysujmy powyższy wykres jeszcze raz ale bez tych dwóch metod.
+
+```{r fig.height=4, fig.width=6}
+exo_cleaned %>%
+  filter(!detection_method %in% c("Transit", "Radial Velocity")) %>%
+  ggplot(aes(y = detection_method )) +
+  geom_bar(fill = "darkgreen",
+           colour = "darkgreen") +
+  labs(title = "Liczba planet odkrytych daną metodą",
+       y = "metoda odkrycia",
+       x = "liczba obserwacji")
+```
+
+Wśród pozostałych metod najpopularniejsza jest metoda Direct Imaging.
+
+# Pytania badawcze
+
+## 1. Czy typ planety wpływa na jej jasność?
+
+Możnaby się zastanawiać, czy planety gazowe mają większą jasność a planety skaliste mniejszą. 
+
+```{r}
+tapply(exo_cleaned$stellar_magnitude, exo_cleaned$planet_type, summary)
+
+```
+Popatrzmy najpierw na podstawowe statystyki opisowe. Maksymalną jak i minimalną jasność osiągają przedstawiciele gazowych olbrzymów, biorąc pod uwagę wszystkie typy planet. Gazowi olbrzymi natomiast posiadają najniższą średnią jasność w porównaniu do innych typów planet.
+Zobaczmy jak kształtuje się to na wykresie.
+
+```{r fig.height=4, fig.width=6}
+exo_cleaned %>%
+  rename(typ_planety = planet_type) %>%
+  ggplot(aes(x = typ_planety, y = stellar_magnitude, color = typ_planety)) +
+  geom_jitter() +
+  labs(title = "Zależność między typem planety a jasnością",
+       x = "typ planety",
+       y = "jasność")
+```
+
+Na wykresie bardzo dobrze zostało ujęte jak jeden przedstawiciel gazowych olbrzymów posiada niesamowicie wysoką jasność. Przypadek ten jest bardzo ciekawy, omówię go w dalszej części mojej pracy, gdzie pokazane będą różne anomalnie we wrzechświecie.
+
+Na podstawie wykresu i statystyk opisowych możemy stwierdzić, że największym odchyleniem standardowych charakteryzują się gazowe giganty.
+```{r}
+exo_cleaned$planet_type[which.max(sd(exo_cleaned$stellar_magnitude))]
+
+```
+
+Natomiast najmniejszym odchyleniem standardowym charakteryzują się planety skaliste.
+Można więc stwierdzić, że jest pewna zależność między typem planety a jej jasnością.
+Jednak jak nam wiadomo, planety świecą światłem odbitym, więc to gwiazda wokół której sie obracają ma na to bardzo duży wpływ.
+
+
+Ciekawi mnie natomiast, czy istnieje zależność między rokiem odkrycia planety a jej jasnością. Czy kiedyś były mniej dokładne teleskopy? 
+
+```{r fig.height=5, fig.width=7}
+exo_cleaned %>%
+  rename(typ_planety = planet_type) %>%
+  ggplot(aes(x = discovery_year, y = stellar_magnitude, col = typ_planety)) +
+  geom_line(size = 1.5) +
+  labs(title = "Jasność w zależności od roku odkrycia",
+       x = "rok odkrycia", 
+       y = "jasność") +
+facet_wrap(~typ_planety)
+```
+
+Na podstawie wykresów trudno jest określić zależność między tymi zmiennymi, jednak dla pewności policzmy korelację Spearmana (ponieważ istnieją wartości odstające, a zmienna nie ma rozkładu normalnego).
+
+```{r}
+cor(exo_cleaned$discovery_year, exo_cleaned$stellar_magnitude, method = "spearman")
+```
+
+Jak widać, mamy brak zależności między rokiem odkrycia a jasnością planet.
+
+
+## 2. Jakie są zależności między masą planety a jej typem?
+
+Możnaby pomyśleć, że gazowe giganty (jak sama nazwa wskazuje) są wielkie, ciężkie. Planety skaliste brzmią dość łagodnie (możnaby założyć, że raczej będą malutkie). Wyświetlę więc podstawowe statystyk opisowe dla masy planet, w zależności od podstawy mnożnika masy i typu planety.
+
+```{r message=FALSE, warning=FALSE}
+masa_typ_baza <- exo_cleaned %>%
+  select(mass_multiplier, mass_wrt, planet_type) %>%
+  group_by(mass_wrt, planet_type) %>%
+  summarize(sr_masa = mean(mass_multiplier),
+            me_masa = median(mass_multiplier),
+            max_masa = max(mass_multiplier),
+            min_masa = min(mass_multiplier),
+            sd_masa = sd(mass_multiplier),
+            liczba_obs = n())
+masa_typ_baza
+```
+
+Jak można było się spodziewać, największą średnią masą odznaczają się gazowe giganty, dla których podstawą mnożnika jest masa Ziemi. Jest to dość logiczne (Ziemia ma stosunkowo małą masę, więc dla planet o bardzo dużej masie mnożnik będzie wysoki). Najbardziej miarodajnym wynikiem jednak będzie średnia masa dla gazowych olbrzymów, których podstawą mnożnika masy jest Jowisz. Jednak również tu gazowe olbrzymy posiadają najwyższą średnią masę. Najmniejszą średnią masą, tak jak przewidywałam, odznaczają się planety skaliste. 
+Maksymalną masą odznaczył się przedstawiciel gazowych olbrzymów. Największe odchylenie standardowe również należy do tej grupy planet. 
+
+Zobaczmy jak to prezentuje się na wykresie.
+
+```{r fig.height=5, fig.width=6}
+exo_bez_outlierow_masy %>%
+  rename(typ_planety = planet_type, 
+         mnoznik_masy = mass_wrt) %>%
+  ggplot(aes(y = mass_multiplier, col = typ_planety)) +
+  geom_boxplot() +
+  labs(title = "Masa w zależności od podstawy mnożnika masy",
+       x = "podstawa mnożnika masy", 
+       y = "masa") +
+  facet_wrap(~mnoznik_masy) +
+  theme(axis.text.x = element_blank())
+```
+
+Widać, że wśród gazowych olbrzymów dla których podstawą mnożnika masy jest Jowisz istnieje bardzo dużo wartości odstających. Może gdzieś we wszechświecie istnieje kolonia super gazowych gigantów :)
+
+Załóżmy całkowicie abstrakcyjnie, że chcielibyśmy zważyć wszystkie egzoplanety. Jaki byłby procentowy udział każdego typu planet w ogólnej wadze ich wszystkich?
+
+```{r fig.height=4, fig.width=6}
+exo_bez_outlierow_masy %>%
+  rename(typ_planety = planet_type, 
+         mnoznik_masy = mass_wrt) %>%
+  ggplot() +
+  geom_bar(aes(x=mnoznik_masy, fill = typ_planety),
+           color = "white",
+           position = "fill") +
+  labs(title = "Masa w zależności od podstawy mnożnika masy",
+       x = "podstawa mnożnika masy", 
+       y = "masa") +
+  facet_wrap(~mnoznik_masy) +
+  theme(axis.text.x = element_blank())
+```
+
+Zdecydowanie największy procentowy udział wśród planet, dla których podstawą mnożnika masy jest Jowisz, posiadałyby gazowe giganty. Wśród planet, dla których podstawą mnożnika masy jest Ziemia, największy udział w ogólnej masie wszystkich planet mają planety podobne do Neptuna oraz superziemie.
+
+
+## 3. Jakie są zależności między masą planety a jej typem?
+
+Podobnie jak w przypadku masy, możnaby stwierdzić, że największy promień będą miały gazowe olbrzymy a najmniejszy planety skaliste. Sprawdźmy czy nasza teza się sprawdza.
+
+```{r message=FALSE, warning=FALSE}
+promien_typ_baza <- exo_cleaned %>%
+  select(radius_multiplier, radius_wrt, planet_type) %>%
+  group_by(radius_wrt, planet_type) %>%
+  summarize(sr_promien = mean(radius_multiplier),
+            me_promien = mean(radius_multiplier),
+            max_promien = max(radius_multiplier),
+            min_promie = min(radius_multiplier),
+            sd_promien = sd(radius_multiplier),
+            liczba_obs = n())
+promien_typ_baza
+```
+
+Tym razem największym średnim promieniem odznaczają się planety podobne do Neptuna, dla których podstawą mnożnika promienia jest Ziemia. Natomiast jeżeli bierzemy pod uwagę podstawę mnożnika jako promień Jowisza, to największym średnim promieniem charakteryzują się gazowe olbrzymy. Bardzo interesującym wynikiem natomiast jest to, że średni promień superziemi, dla których podstawą jest Jowisz, jest mniejszy od średniego promienia planet skalistych, dla których podstawą jest Jowisz. Niemniej jednak w tej drugiej grupie posiadamy tylko dwie obserwacje, więc nie jest to odpowiednia liczebność próbki statystycznej do wyciągania pewnych wniosków. 
+Maksymalnym promieniem odznacza się reprezentant gazowych olbrzymów, co również było do przewidzenia.
+
+Zwizualizujmy jeszcze te statystyki na wykresie.
+```{r fig.height=5, fig.width=6}
+exo_bez_outlierow_promien %>%
+  rename(typ_planety = planet_type, 
+         mnoznik_promienia = radius_wrt) %>%
+  ggplot(aes(y = radius_multiplier, col = typ_planety)) +
+  geom_boxplot() +
+  labs(title = "Promień w zależności od podstawy mnożnika promienia",
+       x = "podstawa mnożnika promienia", 
+       y = "promień") +
+  facet_wrap(~mnoznik_promienia) +
+  theme(axis.text.x = element_blank())
+```
+
+Spójrzmy na gazowe olbrzymy, dla których podstawą promienia jest Jowisz. Tym razem po obu stronach znajduje się znacząca liczba outlierów. Może we wszechświecie istnieją jednak dwie kolonie: malutkich gazowych olbrzymów i super gazowych olbrzymów :).
+
+## 4. Czy większy promień oznacza większą masę?
+
+Oczywiście intuicyjnie wydaje się, że większy promień oznacza większą masę. Sprawdźmy nasze przypuszczenia za pomocą wykresu.
+```{r fig.height=4, fig.width=6}
+exo_bez_outlierow_promien %>%
+  rename(mnoznik_masy = mass_wrt) %>%
+  group_by(mnoznik_masy, radius_wrt) %>%
+  ggplot(aes(x = radius_multiplier, y = mass_multiplier, col = mnoznik_masy)) +
+  geom_line() +
+  labs(title = "Zależność masy od promienia",
+       x = "promień", 
+       y = "masa") +
+  facet_wrap(~radius_wrt)
+```
+
+Na podstawie wykresu ciężko nam zauważyć jakąś zależność.
+Policzmy więc współczynnik korelacji spearmana.
+```{r}
+cor(exo_cleaned$mass_multiplier, exo_cleaned$radius_multiplier, method = "spearman")
+```
+
+I tu mamy bardzo ciekawy wynik. Mówi nam, że mamy przeciętną odwrotnie proporcjonalną zależność liniową między masą a promieniem egzoplanet. Niemniej jednak wpływ na ten wynik może mieć sprzężenie gwaritacyjne, skład atmosferyczny planet oraz oddziaływanie z gwiazdą macierzystą. Zatem jak widać w tym przypadku: "większy wcale nie znaczy cięższy".
+
+
+## 5. Jaka jest zależność między promieniem orbity a czasem obiegu planety wokół gwiazdy według typów planet?
+
+Aby odpowiedzieć na wyżej postawione pytanie, zwizualizujmy naszą statystykę.
+
+```{r fig.height=5, fig.width=7}
+exo_bez_outlierow_promienia_orbity %>%
+  rename(typ_planety = planet_type) %>%
+  ggplot(aes(x = orbital_radius, y = orbital_period, col = typ_planety)) +
+  geom_line() +
+  labs(title = "Zależność promienia orbity od czasu obiegu wokół gwiazdy",
+       x = "promień orbity",
+       y = "czas obiegu") +
+  facet_wrap(~typ_planety)
+```
+
+Jak widać na wykresach istnieje liniowa zależność między promieniem orbity a okresem orbitalnym. Ma to sensowne wytłumaczenie, ponieważ według 3. Prawa Keplera oraz zasady zachowania momentu pędu, im mniejszy promień orbity, tym większa jest prędkość orbitalna, a co za tym idzie okres orbitalny.
+
+```{r}
+cor(exo_cleaned$orbital_radius, exo_cleaned$orbital_period, method = "spearman")
+```
+
+Mamy bardzo silną korelację liniową, która potwierdza tezę, iż im większy promień orbity tym większy czas obiegu wokół gwiazdy.
+
+## 6. Czy istnieje zależność między ecentrycznością a czasem obiegu wokół gwiazdy?
+
+Tak samo jak w poprzednim przykładzie, najpierw zwizualizujmy to na wykresie.
+
+```{r fig.height=5, fig.width=7}
+exo_bez_outlierow_czasu_obiegu %>%
+  rename(typ_planety = planet_type) %>%
+  ggplot() +
+  geom_line(aes(x = eccentricity, y = orbital_period, col = typ_planety)) +
+  labs(title = "Zależność ecentryczności orbity od czasu obiegu wokół gwiazdy",
+       x = "ecentryczność orbity",
+       y = "czas obiegu") +
+  facet_wrap(~typ_planety)
+```
+
+Ciężko odczytać coś sensownego z tych wykresów. Policzmy więc współczynnik korelacji dla tych zmiennych.
+```{r}
+cor(exo_cleaned$eccentricity, exo_cleaned$orbital_period, method = "spearman")
+
+```
+
+Istnieje słaba zależność liniowa między ecentrycznością orbity a czasem obiegu wokół gwiazdy.
+
+Sprawdźmy na podstawie macierzy korelacji czy istnieją zależności między tymi trzema zmiennymi:
+`ecentricity`, `orbital_period` i `orbital_radius`.
+```{r fig.height=5, fig.width=5}
+wybrane_dane <- exo_cleaned[, c("eccentricity", "orbital_period", "orbital_radius")]
+macierz_korelacji = cor(wybrane_dane, method = "spearman")
+round(macierz_korelacji, 2)
+corrplot(macierz_korelacji, method = "color", addCoef.col = "purple", tl.cex = 0.7, tl.col = "black")
+
+```
+
+Oto co możemy zaobserwować:
+
+- Bardzo silna zależność między promieniem orbity a czasem obiegu wokół gwiazdy
+
+- Słaba zależność między ecentrycznością a czasem obiegu wokół gwiazdy
+
+- Słaba zależność między ecentrycznością a promieniem orbity
+
+## 7. Jakie anomalie występują we wszechświecie?
+
+Jak wcześniej wspomniałam w podpunkcie 1., sprawdzimy teraz jaka planeta ma tak niesłychanie dużą jasność. Wiemy już, że jest to gazowy olbrzym.
+
+```{r}
+exo_cleaned[exo_cleaned$stellar_magnitude == max(exo_cleaned$stellar_magnitude),]
+
+```
+
+Jest to MOA-bin-29 b.
+**MOA-bin-29 b** to egzoplaneta gazowego olbrzyma krążąca wokół gwiazdy nieznanego typu. Jego masa wynosi 0,6 Jowisza, pełne okrążenie gwiazdy zajmuje 1,9 roku i znajduje się w odległości 0,48 jednostki astronomicznej od gwiazdy. Jego odkrycie ogłoszono w 2019 roku. Znajduje się aż 23 225 lat świetlnych od Ziemi!
+
+No dobrze, a w takim razie jaka gwiazda ma najmniejszą jasność?
+```{r}
+exo_cleaned[exo_cleaned$stellar_magnitude == min(exo_cleaned$stellar_magnitude),]
+
+```
+
+Jest to Alpha Tauri b.
+**Alpha Tauri b** to egzoplaneta gazowego olbrzyma krążąca wokół gwiazdy typu K. Jego masa wynosi 6,47 masy Jowisza. Pełne okrążenie gwiazdy zajmuje 1,7 roku i znajduje się 1,46 jednostki astronomicznej od gwiazdy. Jego odkrycie ogłoszono w 2015 roku. Znajduje się 67 lat świetlnych od Ziemi, co w porównaniu do poprzedniej planety to bardzo mało. 
+
+Nasunęło mi się tu ciekawe pytanie: czy w takim razie planety, które są dalej od Ziemi są jaśniejsze?
+
+Zobaczmy jak to się kształtuje na wykresie.
+```{r fig.height=5, fig.width=7}
+exo_cleaned %>%
+  rename(typ_planety = planet_type) %>%
+  ggplot(aes(x = distance, y = stellar_magnitude, col = typ_planety)) +
+  geom_line(size = 1.5) +
+  labs(title = "Jasność w zależności od dystansu",
+       x = "dystans", 
+       y = "jasność") +
+  facet_wrap(~typ_planety)
+
+```
+
+Już na wykresie możemy zaobserwować pewną zależność między tymi zmiennymi, jednak dla pewności policzmy jeszcze korelację spearmana.
+
+```{r}
+cor(exo_cleaned$distance, exo_cleaned$stellar_magnitude, method = "spearman")
+
+```
+Zatem między dystansem a jasnością planet istnieje wysoka zależność liniowa.
+Możnaby wywnioskować, że im większy dystans od Ziemi, tym obserwowana planeta jest jaśniejsza.
+Jednak nie do końca jest to stwierdzenie prawdziwe. W rzeczywistości jasność planet zależy od ich odległości od Słońca. Zależnoćś, która wyszła nam powyżej powinna więc być interpretowana w inny sposób, a mianowicie:
+Im planeta znajduje się dalej od Ziemi, tym ciężej jest ją odkryć. O wiele łatwiej jest wykryć i zbadać planety, które znajdują się blisko. Łatwiej jest również odkryć planetę, która jest jaśniejsza, ponieważ będzie się wyróżniać na czarnym tle przestrzeni kosmicznej. Planety, które znajdują się bardzo daleko od Ziemi są niezwykle ciężkie do wykrycia, dlatego zostały odkryte tylko te, które są bardzo jasne. Nie oznacza to jednak, że bardzo daleko od Ziemi nie ma planet ciemnych - są, po prostu nie zostały jeszcze odkryte :).
+
+Sprawdźmy więc czy nasze rozumowanie jest poprawne i policzmy korelację dla promienia orbity planety i jej jasności.
+
+```{r}
+cor(exo_cleaned$orbital_radius, exo_cleaned$stellar_magnitude, method = "spearman")
+
+```
+
+Mimo, że korelacja jest słaba, to na pewno możemy stwierdzić, że jest to odwrotnieproporcjonalna zależonść. Czyli im mniejszy promień orbity, tym większa jasność. Siła korelacji może tu wynikać z faktu, iż wiele innych czynników ma wpływ na jasność planety, dlatego nie zawsze jest to uwarunkowane tylko promieniem orbity.
+
+
+Przyjrzyjmy się teraz planecie, która znajduje się najbliżej Ziemi.
+
+```{r}
+exo_cleaned[exo_cleaned$distance == min(exo_cleaned$distance),]
+
+```
+
+Najbliżej Ziemi znajduje się Proxima Centauri b.
+**Proxima Centauri b** to egzoplaneta superziemska krążąca wokół gwiazdy typu M. Jej masa wynosi 1,07 Ziemi, pełne okrążenie gwiazdy zajmuje 11,2 dnia, a odległość od gwiazdy wynosi 0,04856 AU. Jej odkrycie ogłoszono w 2016 roku. Znajduje się tylko 4 lata świetlne od Ziemi!
+
+A w takim razie jaka planeta znajduje się najdalej od Ziemi?
+
+```{r}
+exo_cleaned[exo_cleaned$distance == max(exo_cleaned$distance),]
+
+```
+
+Mamy tutaj remis. Dwie planety znajdujące się w takiej samej odległości od Ziemi. Pierwsza z nich to SWEEPS-11 b.
+**SWEEPS-11 b** to egzoplaneta gazowego olbrzyma krążąca wokół gwiazdy nieznanego typu. Jej masa wynosi 9,7 masy Jowisza. Pełne okrążenie gwiazdy zajmuje 1,8 dnia, a odległość od gwiazdy wynosi 0,03 jednostki astronomicznej. Jej odkrycie ogłoszono w 2006 roku.
+
+Druga z nich to SWEEPS-4 b
+**SWEEPS-4 b** to egzoplaneta gazowego olbrzyma krążąca wokół gwiazdy nieznanego typu. Jej masa wynosi 3,8 masy Jowisza. Pełne okrążenie gwiazdy zajmuje 4,2 dnia, a odległość od gwiazdy wynosi 0,055 jednostki astronomicznej. Jej odkrycie ogłoszono w 2006 roku.
+Obie gwiazdy znajdują się w odległości 27 727 lat świetlnych od Ziemi!
+
+
+Ciekawi mnie jeszcze, jaka jest największa planeta jaką odkryto.
+```{r}
+exo_cleaned[exo_cleaned$radius_multiplier == max(exo_cleaned$radius_multiplier),]
+
+```
+
+Zatem jest to planeta HD 100546 b. Jej podstawą mnożnika jest Jowisz, więc rzeczywiście jest to największa planeta.
+**HD 100546 b** to egzoplaneta gazowego olbrzyma krążąca wokół gwiazdy typu B. Pełne okrążenie swojej gwiazdy zajmuje 249,2 lat i znajduje się w odległości 53,0 jednostek astronomicznych od swojej gwiazdy. Jej odkrycie ogłoszono w 2014 roku. Jej promień jest aż 6.9 razy większy od promienia Jowisza! Jest to niesamowicie dużo, zwłaszcza że w naszym Ukłądzie Słonecznym Jowisz jest największą planetą.
+
+
+## 8. Jak zmienia się średnia liczba planet odkrytych daną metodą na przestrzeni lat?
+
+Jestem ciekawa, czy różne metody odkrywania planet były popularne w różnych latach. 
+Sprawdźmy to za pomocą wykresu.
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  group_by(discovery_year, detection_method) %>%
+  summarise(liczba_planet = n()) %>%
+  ggplot(mapping = aes(x = discovery_year, y = liczba_planet, color = detection_method)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Liczba planet uzyskanych daną metodą na przestrzeni lat",
+       x = "Rok",
+       y = "Liczba planet") +
+  theme_minimal()
+
+```
+
+Pierwsze co się rzuca w oczy to bardzo duża liczba planet odkrytych metodą tranzytową po 2012 roku.
+Pierwszą metodą za pomocą której astronomowie odkrywali planety była metoda prędkości radialnej. Dopiero po roku 2001 wprowadzono kolejne metody odkrywania planet. Przez popularność tych dwóch metod ciężko nam odczytać inne zależności, więc wyświetlmy jeszcze raz ten wykres z pominięciem metody tranzytowej i metody prędkości radialnej.
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  filter(!detection_method %in% c("Transit", "Radial Velocity")) %>%
+  group_by(discovery_year, detection_method) %>%
+  summarise(liczba_planet = n()) %>%
+  ggplot(mapping = aes(x = discovery_year, y = liczba_planet, color = detection_method)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Liczba planet odkrytych daną metodą na przestrzeni lat",
+       x = "Rok",
+       y = "Liczba planet") +
+  theme_minimal()
+```
+
+Jak widać, te metody już są mniej popularne w porównaniu do zaprezentowanych na wcześniejszym wykresie. Dużą popularność przed 2015 rokiem zyskała metoda Transit Timing Variations. Jednak zdecydowanie użycie wyżej wyświetlonych metod to rzadkość w porównaniu z metodą tranzytową i metodą prędkości radialnej.
+
+
+## 9. Zależność między odległością od Ziemi a metodą wykrycia planet
+
+Kolejnym ciekawym zagadnieniem jest dobór metody wykrywania planet w zależności od ich odległości od Ziemi.
+Interesuje mnie, czy niektóre metody są bardziej skuteczne w wykrywaniu dalekich planet, a niektóre w wykrywaniu tych bliższych.
+
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  group_by(distance, detection_method) %>%
+  summarise(liczba_planet = n()) %>%
+  ggplot(mapping = aes(x = distance, y = liczba_planet, color = detection_method)) +
+  geom_point() +
+  labs(title = "Liczba planet w zależności od odległości od Ziemi",
+       x = "Dystans",
+       y = "Liczba planet",
+       color = "Metoda odkrywania") +
+  theme_minimal()
+```
+
+Na razie mało możemy odczytać z tego wykresu, jednak ważną obserwacją jest to, że najdalsza planeta została odkryta metodą tranzytową, a pozostałe planety, bardzo dalekie od Ziemi, metodą grawitacyjnego mikroogniwa.
+
+Przyjrzyjmy się więc tym dwóm metodom.
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  filter(detection_method %in% c("Gravitational Microlensing", "Transit")) %>%
+  group_by(distance, detection_method) %>%
+  summarise(liczba_planet = n()) %>%
+  ggplot(mapping = aes(x = distance, y = liczba_planet, color = detection_method)) +
+  geom_point() +
+  labs(title = "Liczba planet w zależności od odległości od Ziemi",
+       x = "Dystans",
+       y = "Liczba planet",
+       color = "Metoda odkrycia") +
+  theme_minimal() +
+  facet_wrap(~detection_method)
+```
+
+Jak widać, ten jeden przypadek planety w metodzie tranzytowej to wyjątek. Natomiast zdecydowanie metoda grawitacyjnego mikroogniwa bardzo dobrze sprawdza się w wykrywaniu tych bardzo dalekich planet.
+Jest tak, ponieważ metoda ta nie jest zależna od długości fali świetlnej oraz może być stosowana do wykrywania planet, które same w sobie są ciemne i nie emitują światła.
+
+Sprawdźmy teraz jak kształtują się te statystyki dla pozostałych metod wykrywania planet.
+```{r fig.height=7, fig.width=9, message=FALSE, warning=FALSE}
+
+exo_cleaned %>%
+  filter(!detection_method %in% c("Gravitational Microlensing", "Transit")) %>%
+  group_by(distance, detection_method) %>%
+  summarise(liczba_planet = n()) %>%
+  ggplot(mapping = aes(x = distance, y = liczba_planet, color = detection_method)) +
+  geom_point() +
+  labs(title = "Liczba planet w zależności od odległości od Ziemi",
+       x = "Dystans",
+       y = "Liczba planet",
+       color = "Metoda odkrywania") +
+  theme_minimal() +
+  facet_wrap(~detection_method, ncol = 2)
+```
+
+Jak widać na wykresach, zdecydowanie te metody są lepsze przy wykrywaniu planet bliższych niż 5000 lat świetlnych od Ziemi. Metoda astronometry, disk kinematics i direct imaging stosuje się do wykrywania tylko tych najbliższych planet. Najwięcej nalbliższych planet zostało odkrytych metodami direct imaging oraz radial velocity.
+
+## 10. Jaka jest zależność między typem planety a metodą odkrycia?
+
+Czy niektóre typy planet łatwiej wykryć przy użyciu konkretnej metody? Sprawdźmy to za pomocą wykresu.
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  ggplot() +
+  geom_bar(aes(x = planet_type,
+               fill = detection_method),
+           color = "black", 
+           position = "dodge2") +
+  theme_light() +
+  labs(title = "Liczba planet danego typu odkrytych daną metodą",
+       x = "typ planety",
+       y = "liczba planet",
+       fill = "metoda odkrycia")
+```
+
+Jak widać, najwięcej planet podobnych do Neptuna, Superziemi oraz planet skalistych zostało odkrytych metodą tranzytową. Najwięcej gazowych gigantów natomiast zostało wykrytych za pomocą metody radial velocity, która nie jest tak popularne wśród innych typów planet.
+
+Sprawdźmy jak kształtuje się nasza statytyka, gdy nie bralibyśmy pod uwagę dwóch wymienionych wyżej metod.
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+exo_cleaned %>%
+  filter(!detection_method %in% c("Transit", "Radial Velocity")) %>%
+  ggplot() +
+  geom_bar(aes(x = planet_type,
+               fill = detection_method),
+           color = "black", 
+           position = "dodge2") +
+  theme_light() +
+  labs(title = "Liczba planet danego typu odkrytych daną metodą",
+       x = "typ planety",
+       y = "liczba planet",
+       fill = "metoda odkrycia")
+```
+
+Gazowi olbrzymi zdecydowanie mają najwięcej reprezentantów wśród różnych metod odkrywania planet. Pozostałe typy planet ograniczają się tylko do 4 metod. Metoda transit timing variations znalazła się wśród każdego typu planet.
+
+# Podsumowanie
+
+Kosmos jest bardzo ciekawym zagadnieniem i niesamowite jest to, jak wiele zagadek w sobie skrywa. Tak naprawdę znamy tylko malutką część wszechświata, reszta jest dla nas nieodkryta. Bardzo interesujące jest to, jak wiele kosmos może skrywać w sobie tajemnic. Na podstawie mojej pracy dowiedzieliśmy się o bardzo wielu ciekawych zależnościach, a statystyki zobrazowały nam jak wszechświat jest ogromny. Ciekawe jak bardzo zwiększy się nasza o wszechświecie za 10 lat albo za 1000... Może moją pracę kiedyś przeczyta ktoś z planety, o której pisałam :).
